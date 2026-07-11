@@ -1,93 +1,173 @@
 # AI Agent Skills
 
+![Superworker — someone who works much more productively by using AI tools](docs/superworker.jpg)
 
-A curated collection of rules, skills, and patterns for AI coding agents (Cursor, Claude Code, and similar tools) — designed to generate high-quality, production-ready code across multiple platforms.
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/nphausg/aiagent.skills/pulls)
+[![Stars](https://img.shields.io/github/stars/nphausg/aiagent.skills?style=flat)](https://github.com/nphausg/aiagent.skills/stargazers)
 
-## What's Inside
+> **Become a superworker.** Someone who works much more productively by using AI tools that can carry out tasks and act on their behalf. — *Cambridge Dictionary*
 
-| Category | Path | Description |
-|---|---|---|
-| Android | `.cursor/rules/android/` | MVVM, Hilt DI, Coroutines, testing, WorkManager |
-| Frontend | `.cursor/rules/frontend/` | React Hooks best practices |
-| General | `.cursor/rules/general/` | Clean code, performance tips |
-| iOS | `.cursor/rules/ios/` | *(coming soon)* |
-| Skills | `skills/` | Claude Code slash commands (e.g., `/debug`) |
+A library of **skills and rules** that make AI coding agents smarter — giving Claude Code, Cursor, and compatible agents the same discipline and judgment a senior engineer would apply, without repeating yourself in every prompt.
 
-## Cursor Rules (`.mdc` files)
+---
 
-Rules live in `.cursor/rules/` and are picked up automatically by Cursor IDE. Each file targets specific file patterns via `globs` metadata.
+## Why This Exists
 
-### How to use
+Out of the box, AI coding agents are capable but undisciplined. They generate code that works in isolation but violates architecture boundaries, skips test coverage, or ignores platform conventions. This repo fixes that by encoding hard-won engineering standards into two complementary layers:
 
-**Option 1 — Automatic (recommended):** Place the repo or its `.cursor/rules/` folder in your project; Cursor loads matching rules automatically.
+- **Skills** — active behaviors: slash commands that give agents a structured process to follow for complex tasks (debugging, multi-agent orchestration, etc.)
+- **Rules** — passive guardrails: `.mdc` files loaded by Cursor that enforce architecture, naming, and testing patterns on every code generation
 
-**Option 2 — Manual:** Copy the relevant rule block and prepend it to your prompt:
-```
-Please follow this rule strictly:
+Together they turn a capable AI into a reliable engineering partner.
 
-[paste rule content here]
+---
 
-Now, here's my request: ...
-```
+## Agent Skills
 
-### Key principles encoded in the rules
+Skills live in `skills/` and install as Claude Code slash commands. Each skill is a `SKILL.md` file that defines a structured process the agent follows when invoked.
 
-**Android**
-- MVVM: business logic in `ViewModel`, views only observe `StateFlow`
-- Clean Architecture: Domain / Data / Presentation layer separation; all business logic in `UseCase`
-- Hilt dependency injection (`@HiltViewModel`, `@Inject`, `@Module`)
-- Coroutines: `viewModelScope`, `Dispatchers.IO` for I/O, no heavy work on main thread
-- Testing: BDD-style naming (`given_when_then`), MockK/Mockito, `runTest`
-
-**Frontend**
-- Functional components only
-- Cleanup in `useEffect`, stable references with `useCallback` / `useMemo`
-
-**General**
-- Single Responsibility, DRY, `lazy` initialization, avoid reflection
-
-## Claude Code Skills (`skills/`)
-
-Skills extend Claude Code with slash commands usable in any project.
-
-| Skill | Command | Purpose |
-|---|---|---|
-| debug | `/debug` | Structured bug diagnosis — gather context, find root cause, show minimal fix |
-
-To install a skill into a project, copy its `SKILL.md` into `.claude/skills/<name>/SKILL.md`.
-
-## Rule Review Checklist
-
-| Item | Details |
-|---|---|
-| Naming & location | File name descriptive? Correct folder? |
-| `globs` accuracy | Patterns match intended files? |
-| Clarity | Rules are actionable and unambiguous? |
-| Conciseness | No redundancy; under ~100 lines |
-| Consistency | No conflicts with existing rules |
-| Token efficiency | Validated with `scripts/analyze_token_usage.py` |
-| AI compliance | Tested with `scripts/run_ai_prompt_tests.py` |
-
-## Scripts
+### Install a skill
 
 ```bash
-# Check token usage across all rule files (flag files > 1500 tokens)
-python scripts/analyze_token_usage.py
-
-# Test AI compliance against expected keywords (requires OPENAI_API_KEY)
-OPENAI_API_KEY=... python scripts/run_ai_prompt_tests.py
+mkdir -p .claude/skills/<skill-name>
+cp skills/<skill-name>/SKILL.md .claude/skills/<skill-name>/SKILL.md
 ```
+
+---
+
+### `/debug` — Structured Bug Diagnosis
+
+**Problem it solves:** Agents jump to guesses. This skill forces a disciplined root-cause process before touching any code.
+
+```
+/debug [paste error or description]
+```
+
+The agent follows a fixed four-step pipeline:
+
+1. **Gather** — collects structured context: problem · expected · actual · code · error · env · tried
+2. **Diagnose** — identifies the root cause in one sentence, not a symptom
+3. **Fix** — shows a minimal diff; no rewrites, no style changes, no scope creep
+4. **Verify** — tells you exactly how to confirm the fix worked (command, assertion, or observable behavior)
+
+Rules the agent must obey: never guess without labeling it a hypothesis; never propose more than one fix per response; never refactor beyond what directly fixes the bug.
+
+---
+
+### `/friday` — Multi-Agent Task Orchestration
+
+**Problem it solves:** Complex coding tasks need more than one agent. `/friday` is a coordination loop that drives tasks end-to-end through independent agents with human approval gates and evidence-based quality checks.
+
+```
+brainstorm → plan → approve → implement → review → smoke-test → ship
+```
+
+The **orchestrating session only coordinates** — it never writes feature code itself. Each phase is delegated:
+
+| Phase | Agent | Responsibility |
+| --- | --- | --- |
+| Plan | Fable (or Opus 4.8 fallback) | Explores repo, writes a self-contained `plan.md` |
+| Implement | Codex `gpt-5.5` at `xhigh` | Edits files from the plan — never commits |
+| Review | Codex adversarial-review | Independent non-Claude reviewer; finds issues or approves |
+| Smoke test | Opus | Proves the change actually runs with captured evidence |
+| Ship | Orchestrator | Commits and pushes only after all gates pass |
+
+**Two modes:**
+
+| Mode | Trigger | When to use |
+| --- | --- | --- |
+| Full loop | `"friday"` / `"run the friday loop"` | You have a task description; want the full pipeline including brainstorm + plan |
+| Execute mode | `"friday this plan"` / `"friday <file>.md"` | You already have a plan file; skip to implement → review → ship |
+
+**Quality gates (non-negotiable):**
+
+- No implementation without explicit plan approval
+- No PASS on smoke test without shown evidence
+- No self-review — review must be an independent agent
+- No committing orchestration artifacts
+
+---
+
+## Cursor Rules
+
+Rules live in `.cursor/rules/` and are loaded automatically by Cursor IDE based on `globs` in their frontmatter. They are passive — they apply to every matching file without any invocation.
+
+### Install rules
+
+```bash
+git clone https://github.com/nphausg/aiagent.skills.git
+cp -r aiagent.skills/.cursor/rules/ your-project/.cursor/rules/
+```
+
+Or manually copy any rule block and prepend it to your prompt.
+
+---
+
+### Android (8 rules)
+
+| Rule file | Enforces |
+| --- | --- |
+| `android_clean_architecture.mdc` | Domain / Data / Presentation layers; all business logic in `UseCase` |
+| `android_di_hilt_patterns.mdc` | `@HiltViewModel`, `@Inject`, `@Module` — consistent Hilt wiring |
+| `android_general_rules.mdc` | MVVM: `ViewModel` + `StateFlow` + `UiState` sealed classes |
+| `android_naming_conventions.mdc` | File, class, and function naming aligned with Kotlin idioms |
+| `android_unit_testing_bdd.mdc` | BDD-style names (`given_when_then`), MockK/Mockito, `runTest` |
+| `android_integration_testing.mdc` | Integration test structure and Hilt test component setup |
+| `android_ui_testing.mdc` | Compose / Espresso UI testing patterns |
+| `android_workmanager_best_practices.mdc` | WorkManager constraints, chaining, and retry strategies |
+
+### Frontend (1 rule)
+
+| Rule file | Enforces |
+| --- | --- |
+| `react_hooks.mdc` | Functional components · `useEffect` cleanup · `useCallback` / `useMemo` stability |
+
+### General (2 rules)
+
+| Rule file | Enforces |
+| --- | --- |
+| `general_clean_code_principles.mdc` | Single Responsibility, DRY, `lazy` initialization, avoid reflection |
+| `general_performance_tips.mdc` | Lazy loading, memory allocation, recomposition avoidance |
+
+### iOS
+
+Coming soon — contributions welcome.
+
+---
 
 ## Contributing
 
-Pull requests welcome. Please use the PR template and run through the review checklist before submitting.
+Pull requests are welcome. The highest-value area to contribute right now is **iOS rules** — the directory is empty and ready.
 
-<a href="https://revolut.me/nphausg" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="nphausg" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a>
+Before submitting a new rule, verify:
+
+| Check | Criteria |
+| --- | --- |
+| Naming & location | File name is descriptive; placed in the correct category folder |
+| `globs` accuracy | Patterns match only the intended file types |
+| Clarity | Every rule is actionable and unambiguous |
+| Conciseness | No redundancy; target under ~100 lines |
+| Consistency | No conflicts with existing rules |
+| Token efficiency | Run `python scripts/analyze_token_usage.py` — flag if > 1500 tokens |
+| AI compliance | Run `OPENAI_API_KEY=... python scripts/run_ai_prompt_tests.py` |
+
+Use the PR template in `.github/pull_request_template.md`.
+
+---
+
+## Support
+
+[![Buy me a coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://revolut.me/nphausg)
+
+---
 
 ## Author
 
-<p>
-    <a href="https://nphausg.medium.com" target="_blank">
-    <img src="https://avatars2.githubusercontent.com/u/13111806?s=400&u=f09b6160dbbe2b7eeae0aeb0ab4efac0caad57d7&v=4" width="96" height="96">
-    </a>
-</p>
+[![nphausg avatar](https://avatars2.githubusercontent.com/u/13111806?s=128&u=f09b6160dbbe2b7eeae0aeb0ab4efac0caad57d7&v=4)](https://nphausg.medium.com)
+
+**nphausg** · [Medium](https://nphausg.medium.com) · [GitHub](https://github.com/nphausg)
+
+---
+
+[MIT](LICENSE) © nphausg
