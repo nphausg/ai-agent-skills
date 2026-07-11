@@ -1,5 +1,7 @@
 # AI Agent Skills
 
+<img src="docs/logo.png" alt="AI Agent Skills logo" width="80"/>
+
 ![Superworker — someone who works much more productively by using AI tools](docs/superworker.jpg)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -8,7 +10,7 @@
 
 > **Become a superworker.** Someone who works much more productively by using AI tools that can carry out tasks and act on their behalf. — *Cambridge Dictionary*
 
-A library of **skills and rules** that make AI coding agents smarter — giving Claude Code, Cursor, and compatible agents the same discipline and judgment a senior engineer would apply, without repeating yourself in every prompt.
+Your AI agent is capable. But without the right guardrails, it guesses at architecture, skips tests, and ignores platform conventions. **AI Agent Skills** solves that — a battle-tested library of **skills and rules** that give Claude Code, Cursor, and compatible agents the discipline, judgment, and domain knowledge of a senior engineer, encoded once and applied automatically to every prompt, every file, every project.
 
 ---
 

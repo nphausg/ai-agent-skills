@@ -1,0 +1,18 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="1024" height="1024" fill="#C2542F"/>
+
+  <!-- organic monoline spiral glyph, evoking growth / continuous skill flow -->
+  <g transform="translate(512,512) scale(1.7) translate(-541,-442)">
+    <path d="M 340 300
+             C 460 220, 640 240, 700 360
+             C 760 480, 690 610, 560 640
+             C 450 665, 340 610, 330 520
+             C 322 450, 380 400, 440 420
+             C 480 434, 490 480, 460 500"
+          fill="none"
+          stroke="#FBF3E7"
+          stroke-width="88"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+</svg>
