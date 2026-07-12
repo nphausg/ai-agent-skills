@@ -3,7 +3,7 @@
 ## Canonical command
 
 ```bash
-codex --yolo exec -c model="gpt-5.5" -c model_reasoning_effort="xhigh" < plan.md
+codex --yolo exec -c model="gpt-5.5" -c model_reasoning_effort="xhigh" < plan_<timestamp>.md
 ```
 
 Always run codex with exactly this model (`gpt-5.5`) and reasoning effort
@@ -19,13 +19,29 @@ Always run codex with exactly this model (`gpt-5.5`) and reasoning effort
   `gpt-5.5` or `xhigh`, stop and report the error to the user — do not
   silently fall back to another model or a lower effort.
 
+## Coding principles (prepend to every piped plan/fix file)
+
+Codex is stateless and never sees `SKILL.md`, so the **Coding Principles** must
+travel *inside* what you pipe it. Prepend this block to the plan (and every fix
+file) before piping:
+
+```markdown
+## Coding principles (follow strictly)
+- Simplicity First: implement the minimum that satisfies the plan — no features
+  beyond it, no speculative abstractions/config, no error handling for
+  impossible cases. If it could be much shorter, make it shorter.
+- Surgical Changes: change only what the plan requires. Do not refactor,
+  reformat, or "improve" unrelated code; match existing style; remove only the
+  orphans your change creates; leave pre-existing dead code alone.
+```
+
 ## Running it
 
 Always launch with `run_in_background: true` and redirect output to a log in
 the scratchpad, e.g.:
 
 ```bash
-codex --yolo exec -c model="gpt-5.5" -c model_reasoning_effort="xhigh" < plan.md > "$SCRATCHPAD/codex-task-N.log" 2>&1
+codex --yolo exec -c model="gpt-5.5" -c model_reasoning_effort="xhigh" < plan_<timestamp>.md > "$SCRATCHPAD/codex-task-N.log" 2>&1
 ```
 
 Allow up to 30 minutes. Wait for the background completion notification —
@@ -52,13 +68,16 @@ For a fix round, write a fix-instruction file **to the scratchpad directory**
 ```markdown
 # Fix round for: <task title>
 
+## Coding principles (follow strictly)
+<the Simplicity First + Surgical Changes block above>
+
 ## Original plan
-<full plan.md content>
+<full plan content>
 
 ## What was implemented
 <one-paragraph summary of the current diff>
 
-## Review findings to fix (fix ALL of these, change nothing else)
+## Review findings to fix (fix ALL of these — surgically; change nothing else)
 1. <file:line — finding>
 2. ...
 ```

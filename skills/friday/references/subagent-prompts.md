@@ -28,9 +28,18 @@ You are planning one implementation task in the repo at <ABSOLUTE REPO PATH>.
 ## Your job
 1. Explore the repo enough to plan concretely: find the files, patterns, and
    existing abstractions this task should build on.
-2. Write the plan to <ABSOLUTE REPO PATH>/plan.md (overwrite it).
+2. Write the plan to <ABSOLUTE PLAN PATH> (the exact timestamped path the
+   orchestrator provides, e.g. <ABSOLUTE REPO PATH>/plan_20260712-143022.md).
+   Write that file and nothing else; do not create a plain `plan.md`.
 
-## plan.md requirements
+## Coding principles the plan must embody
+- **Simplicity First** — plan the minimum change that solves the task: no
+  features beyond what was asked, no speculative abstractions/config, no error
+  handling for impossible cases. Prefer reusing existing abstractions you found.
+- **Surgical Changes** — scope the plan to touch only what the task requires;
+  no unrelated refactors/reformatting; match existing style.
+
+## plan file requirements
 The plan will be executed verbatim by a separate coding agent with NO other
 context, so it must be self-contained:
 - Restate the task and the repo-relative paths of every file to create/modify
@@ -38,17 +47,19 @@ context, so it must be self-contained:
 - Data flow and integration points with existing code
 - Edge cases to handle
 - How to verify the change works (commands, requests)
-- Explicitly out of scope: what NOT to touch
+- **Explicitly out of scope: what NOT to touch (required — never omit this)**
 
-Return the plan.md content as your final message as well.
+Return the plan content as your final message as well.
 ```
 
 ## Reviewer — FALLBACK ONLY (Agent tool, `model: "fable"` — fallback: Opus 4.8 1M @ `xhigh`)
 
-> Primary reviewer is `/codex:adversarial-review` (see SKILL.md step 4). Use this
-> subagent template only when the Codex plugin is unavailable. The same steer —
-> diff vs plan + task, verdict `approve` | `findings` with `file:line` — applies
-> to either path.
+> Primary review is a parallel team of Codex adversarial-review runs, one per
+> lens (see SKILL.md step 4). Use this subagent template only when the Codex
+> plugin is unavailable — and dispatch it **once per lens, concurrently** (set
+> the "Review for" section to that lens's focus), then merge with the same
+> any-lens-blocks rule. The steer — diff vs plan + task, verdict
+> `approve` | `findings` with `file:line` — is identical on either path.
 
 ```
 You are reviewing an uncommitted implementation in the repo at <ABSOLUTE REPO PATH>.
@@ -61,7 +72,7 @@ Run `git status --short` and `git diff` to see it. Do not modify any files.
 <list or "none" — the diff must not break or re-do this work>
 
 ## Approved plan
-<full plan.md content>
+<full plan content>
 
 ## Review for
 1. Plan conformance — everything in the plan implemented, nothing out of scope
@@ -69,6 +80,8 @@ Run `git status --short` and `git diff` to see it. Do not modify any files.
    existing code (read surrounding code, not just the diff)
 3. Regressions — does the diff break anything that previously worked?
 4. Repo conventions — style, naming, and idiom consistent with neighbors
+5. Simplicity & surgical scope — over-engineering, speculative abstractions,
+   bloated APIs, and edits to unrelated code the task didn't require
 
 ## Verdict format (final message)
 Either:

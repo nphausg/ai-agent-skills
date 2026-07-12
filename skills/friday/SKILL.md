@@ -15,257 +15,275 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion, Skil
 
 # friday — Plan / Codex / Review / Evidence-Test Orchestration Loop
 
-Implement all tasks given by the user, one at a time, through a fixed per-task
-pipeline. The orchestrating session (this session) never writes feature code
-itself — it delegates planning, implementation, review, and testing, and only
-handles coordination, approval gates, and git.
+Implement the user's tasks one at a time through a fixed per-task pipeline. This
+session never writes feature code — it delegates planning, implementation,
+review, and testing, and only coordinates, gates on approval, and does git.
 
 ## Modes
 
-- **Full loop** (default) — the user gives tasks; every task runs the whole
-  pipeline below, including planning and the approval gate.
-- **Execute mode** — the user gives a pre-existing plan as a markdown file
-  ("friday this plan", "execute <path>.md with friday"). Treat the file as
-  the already-approved plan: skip steps 0–2 (brainstorm, plan, approve) and start at Implement, piping the
-  given file to codex instead of a generated `plan.md`. Read the file first —
-  if it is not self-contained enough for a stateless codex session (missing
-  repo paths, target files, or verification steps), prepend a short context
-  preamble to a copy in the scratchpad and pipe that copy; never edit the
-  user's file. Review, smoke test, and ship stages run unchanged, using the
-  provided plan's content wherever the templates ask for "plan.md content". If
-  the file contains multiple tasks/phases, execute them as sequential tasks,
-  each with its own review → smoke-test → ship cycle.
+- **Full loop** (default) — the user gives tasks; each runs the whole pipeline,
+  including planning and the approval gate.
+- **Execute mode** — the user gives a ready plan file ("friday this plan",
+  "run friday on <file>.md"). Treat it as already-approved: skip steps 0–2 and
+  start at Implement, piping that file instead of a generated
+  `plan_<timestamp>.md`. Never edit the user's file; if it isn't self-contained
+  for a stateless codex run (missing repo paths, targets, or verification steps),
+  pipe a context-augmented copy from the scratchpad. Steps 4–6 run unchanged. If
+  the file holds multiple tasks/phases, run them sequentially, each with its own
+  review → smoke-test → ship.
 
-## Goal-driven completion (`/goal` until match criteria)
+## Goal-driven completion
 
 **First action of every run: arm a `/goal` whose condition IS the run's match
-criteria.** `/goal` installs a session Stop-hook that blocks the session from
-stopping until the condition holds (and auto-clears the moment it does) — this is
-what makes the loop *self-continue* through fix → re-review → re-smoke instead of
-stopping early. Invoke it via the Skill/command tool before step 0.
+criteria** (invoke it before step 0). It installs a session Stop-hook that blocks
+stopping until the condition holds and auto-clears when it does — this is what
+makes the loop self-continue through fix → re-review → re-smoke instead of
+stopping early. Set the condition to:
 
-Set the condition to the concrete, checkable match criteria — the same PASS bar
-steps 4–6 already enforce, phrased so "goal met" == "every task shipped
-review-clean and proven":
+> Every task is (a) **every** review lens = **approve** (zero findings across the
+> whole review team), (b) evidenced smoke test = **PASS**, and (c) committed
+> locally (commit only, no push).
 
-> Every task in this run is (a) `/codex:adversarial-review` = **approve** (zero
-> open findings), (b) evidenced smoke test = **PASS** with captured evidence, and
-> (c) committed + pushed.
-
-- If the user gave an explicit acceptance / match criterion, fold it into the
-  condition **verbatim** (it's the authoritative bar).
+- If the user gave explicit acceptance criteria, fold them in **verbatim**.
 - In execute mode, phrase the condition over the plan file's tasks/phases.
-- Never treat the goal as met — or let the session stop — while any task still
-  has open review findings, an unproven or failed smoke test, or uncommitted
-  work. Do NOT tell the user to `/goal clear`; it clears itself on success.
-- The `/goal` only enforces *not stopping early*; it does not replace the
-  per-task loops below — it's the outer guarantee that they run to the bar.
-
-**If `/goal` is unavailable in this environment** (the command/skill is not
-offered, or invoking it errors), do not stop — fall back to a manual
-todo-driven loop: keep a `TodoWrite` checklist whose items ARE the match
-criteria (per task: review-clean, smoke-proven, committed + pushed), and do not
-consider the run finished until every item is checked. The self-continuation is
-then your responsibility rather than the Stop-hook's; the bar is identical.
+- Never treat the goal as met while any task has open findings, an unproven or
+  failed smoke test, or uncommitted work. Don't tell the user to `/goal clear` —
+  it clears itself on success.
+- The `/goal` only enforces *not stopping early*; it doesn't replace the per-task
+  loops below.
+- **If `/goal` is unavailable** (not offered, or invoking it errors), fall back
+  to a `TodoWrite` checklist whose items are the same criteria — the bar is
+  identical, you just self-continue manually.
 
 ## Pipeline (per task)
 
-0. **Brainstorm** — run `superpowers:brainstorming` FIRST to explore intent, requirements, and design with the user before any planning *(skipped in execute mode)*
-1. **Plan** — dispatch a Fable subagent to write `plan.md` for the task, grounded in the brainstorming outcome *(skipped in execute mode)*
-2. **Approve** — present the plan to the user; do NOT proceed without explicit approval *(skipped in execute mode)*
-3. **Implement** — run `codex exec` with the approved plan (background, up to 30 min)
-4. **Review** — run `/codex:adversarial-review` (openai/codex-plugin-cc) on the diff against the plan; Fable subagent fallback
-5. **Evidence smoke test** — dispatch an Opus subagent to PROVE the change works end-to-end with captured evidence; root-cause failures via systematic-debugging
-6. **Ship** — commit and push, then move to the next task
-
-## Model Selection & Fallback
-
-The planner (step 1) runs on **Fable** by default — dispatch it with
-`model: "fable"`. The **reviewer (step 4)** runs on **Codex** via
-`/codex:adversarial-review` (see step 4); it only falls back to a Fable
-subagent when the Codex plugin is unavailable.
-
-**If Fable is unavailable in this environment** (the `fable` model is not
-offered, or an Agent dispatch with `model: "fable"` errors as an unknown/
-unsupported model), fall back to the second-best Claude model: **Opus 4.8
-(1M context)** — dispatch with `model: "opus"` and set reasoning effort to
-**extra high (`xhigh`)**. Do not silently fall through to a default model;
-choosing the fallback should be a deliberate substitution so plan and review
-quality stay as close to the Fable baseline as possible.
-
-Apply the same rule wherever `model: "fable"` appears in this skill and in
-`references/subagent-prompts.md`. The smoke-test subagent (step 5) always runs
-on Opus and is unaffected.
+0. **Brainstorm** — `superpowers:brainstorming` with the user *(skip in execute mode)*
+1. **Plan** — Fable subagent writes a timestamped `plan_<timestamp>.md` *(skip in execute mode)*
+2. **Approve** — get explicit user approval of the plan *(skip in execute mode)*
+3. **Implement** — `codex exec` with the plan (background, ≤30 min); keep the user posted on progress
+4. **Review** — a parallel team of Codex adversarial reviewers, one per lens (correctness / security / performance / approach+simplicity+surgical); any lens with findings blocks → rework to step 3 and re-review the whole team — loop until every lens approves
+5. **Smoke test** — Opus subagent PROVES it works with captured evidence; root-cause any failure
+6. **Ship** — commit only (no push), then next task
 
 ## The One Rule That Matters
 
-Every subagent and every codex session is **completely independent** — it has
-no memory of this conversation, prior tasks, or other subagents. Every
-dispatch must carry the full context it needs: the task statement, relevant
-file paths, repo location, conventions, constraints, what was already done in
-prior tasks, and the exact deliverable expected. A vague prompt produces a
+Every subagent and codex session is **stateless** — no memory of this
+conversation, prior tasks, or other subagents. Every dispatch must carry full
+context: task statement, file paths, repo location, conventions, constraints,
+prior-task summaries, and the exact deliverable. A vague prompt produces a
 useless plan, patch, or review. Use the templates in
-`references/subagent-prompts.md` as the baseline for every dispatch.
+`references/subagent-prompts.md`.
+
+## Coding Principles
+
+Four principles govern every task. Two are already enforced by the pipeline's
+structure; the other two must be **actively carried into the plan and every
+codex round** (Codex is stateless and never sees this file — see steps 1, 3, 4).
+
+- **Think Before Coding** — *enforced by* step 0 Brainstorm + step 2 Approval:
+  surface assumptions and tradeoffs, don't guess silently, stop when confused.
+- **Goal-Driven Execution** — *enforced by* the `/goal` + step 5 evidence test:
+  verifiable success criteria, loop until proven.
+- **Simplicity First** — *plan + codex must carry this*: the minimum code that
+  solves the task. No features beyond what was asked, no speculative
+  abstractions/config, no error handling for impossible cases. If 200 lines
+  could be 50, rewrite it — a senior engineer shouldn't call it overcomplicated.
+- **Surgical Changes** — *plan + codex must carry this*: touch only what the task
+  requires. Don't refactor, reformat, or "improve" unrelated code; match the
+  existing style even if you'd do it differently; remove only the orphans your
+  own change creates; never delete pre-existing dead code (mention it instead).
+
+## Model Selection & Fallback
+
+- **Planner (step 1)** and **fallback reviewer**: Fable (`model: "fable"`).
+- **Implementer (step 3)**: Codex `gpt-5.5` @ `xhigh` (pinned — never downgrade).
+- **Reviewers (step 4)**: a parallel team of Codex adversarial-review runs, one
+  per lens (see step 4); fallback is parallel Fable subagents.
+- **Smoke tester (step 5)**: always Opus (`model: "opus"`) — unaffected by the rule below.
+- **If Fable is unavailable** (the model isn't offered, or a `model: "fable"`
+  dispatch errors as unknown), deliberately substitute **Opus 4.8 (1M)** at
+  `xhigh` — never silently fall through to a default. Applies everywhere
+  `model: "fable"` appears here and in `references/subagent-prompts.md`.
 
 ## Step Details
 
 ### 0. Brainstorm
 
-**Before planning, invoke `superpowers:brainstorming`** (the orchestrator runs it
-inline with the user — not a subagent) to pin down what the task actually is:
-intent, requirements, constraints, edge cases, and the intended design/approach.
-Resolve open questions with the user here, while it's cheap — a plan (and the
-stateless codex run that executes it) is only as good as the shared understanding
-behind it. Skip for a trivially-specified task or in execute mode.
-
-Carry the brainstorming outcome forward: feed the agreed intent + design +
-constraints into the planner's prompt (step 1) so the plan reflects it rather
-than re-deriving it. If brainstorming surfaces that the task is under-specified
-or the wrong thing to build, stop and realign with the user before planning.
+Invoke `superpowers:brainstorming` inline with the user (not a subagent) to pin
+down intent, requirements, constraints, edge cases, and design. Resolve open
+questions now, while it's cheap. Feed the outcome into the planner prompt (step
+1) so the plan reflects it rather than re-deriving it. If the task turns out
+under-specified or wrong, stop and realign before planning. Skip for a trivial
+task or in execute mode.
 
 ### 1. Plan
 
-Dispatch via the Agent tool with `model: "fable"` (or the Opus 4.8 1M @
-`xhigh` fallback — see **Model Selection & Fallback**). Instruct the subagent
-to explore the repo, then write a concrete implementation plan to `plan.md` in
-the repo root (overwrite any previous task's plan) — grounded in the step-0
-brainstorming outcome (intent, design, constraints), which you pass into its
-prompt. Use the planner template in `references/subagent-prompts.md`.
+Dispatch the Agent tool with `model: "fable"`. Have the subagent explore the repo
+and write a concrete plan to a **timestamped** `plan_<timestamp>.md` in the repo
+root, grounded in the step-0 outcome. Use the planner template in
+`references/subagent-prompts.md`.
 
-A good `plan.md` is directly executable by an engineer with no other context:
-files to touch, functions/components to add or change, data flow, edge cases,
-and how to verify.
+Generate the timestamp once per task as local `YYYYMMDD-HHMMSS` (e.g.
+`plan_20260712-143022.md`) and pass the absolute path into the prompt so the
+subagent writes exactly that file. Each task gets its own plan — never overwrite
+a prior one. Track that path; steps 2–4 and 6 all use it.
+
+A good plan is executable with no other context: files to touch,
+functions/components to change, data flow, edge cases, and how to verify. It
+must embody the **Coding Principles** (Simplicity First + Surgical Changes) — the
+minimal change, no speculative abstractions — and its out-of-scope list must name
+what NOT to touch.
 
 ### 2. Approve
 
-Show the user the plan (summary plus path to `plan.md`) and ask for approval.
-Require approval for **every** task's plan before implementation begins. If
-the user requests changes, re-dispatch the planner with the feedback and the
-previous plan, then ask again.
+Show the user the plan (summary + path to `plan_<timestamp>.md`) and get approval
+before implementing — **every** task, no exceptions. On change requests,
+re-dispatch the planner with the feedback and the previous plan, then ask again.
 
 ### 3. Implement with Codex
 
-Run codex non-interactively with the plan as its instructions:
+```bash
+codex --yolo exec -c model="gpt-5.5" -c model_reasoning_effort="xhigh" < plan_<timestamp>.md
+```
+
+In execute mode, substitute the user's plan file (or its scratchpad copy). Run
+with `run_in_background: true` — runs take up to 30 min, longer than a foreground
+Bash timeout. Wait for completion before review; don't review while codex is
+still running. Because Codex is stateless and can't read this file, the **Coding
+Principles** (Simplicity + Surgical) ride *with* the plan into every codex
+dispatch. Full invocation and failure handling: `references/codex-exec.md`.
+
+**Keep the user posted (don't go silent for 30 min).** Post a launch status
+(task, plan file, `gpt-5.5` @ `xhigh`, running in background, log path
+`$SCRATCHPAD/codex-task-N.log`); periodically tail the log (~1–2 min, no
+busy-loop) and relay a short progress note; on completion summarize what changed
+(codex's own summary + `git status --short` / `git diff --stat`). Status lines,
+not raw log dumps.
+
+### 4. Review (parallel lens team)
+
+Review the uncommitted diff (`git diff` / `git status` — codex doesn't commit)
+with a **team of reviewers run in parallel**, each looking through a different
+lens. The stage chain stays sequential (you can't review before implement), but
+the review *itself* is a fan-out — diverse lenses catch failure modes a single
+holistic pass misses.
+
+**Lenses (default set — scale to the diff):**
+- **correctness** — logic errors, unhandled edge cases, broken integrations, regressions
+- **security** — injection, authz/authn, unsafe input handling, secret/credential leaks
+- **performance / resources** — hot-path cost, N+1s, leaks, blocking work, needless allocation
+- **approach / simplicity / surgical** — is this the right approach for the plan+task (or a fragile bandaid)? Plus **Coding Principles** violations: over-engineering, speculative abstractions, bloated APIs, and out-of-scope / unrelated edits.
+
+Use all four for a substantial diff; drop to 1–2 (correctness + approach) for a
+tiny one. Each lens is a **separate reviewer dispatched concurrently.**
+
+**Each reviewer = a Codex adversarial-review run, invoked via the companion
+script directly — NOT the Skill tool.** The `/codex:adversarial-review` slash
+command is `disable-model-invocation`, so `Skill(...)` fails with *"cannot be
+used with Skill tool due to disable-model-invocation"*. Run the companion the
+command shells out to (its `Bash(node:*)` is whitelisted — same mechanism, not a
+safety bypass). For each lens, write its full contract — the diff is the target,
+plan + task are what to judge against, plus the specific lens focus — to a
+scratchpad file, then launch one background run per lens (all at once):
 
 ```bash
-codex --yolo exec -c model="gpt-5.5" -c model_reasoning_effort="xhigh" < plan.md
+COMPANION=$(ls -t ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs 2>/dev/null | head -1)
+# One background run per lens (launch all, then wait on all):
+node "$COMPANION" adversarial-review --background \
+  "Adversarially review the uncommitted working-tree diff through the CORRECTNESS lens only. Full contract in $SCRATCHPAD/review-task-N-correctness.md — read it first. Verdict: exactly 'approve' or a 'findings' list with file:line."
+# …repeat for security / performance / approach, each with its own steer file…
 ```
 
-In execute mode, substitute the user-provided plan file (or its
-context-augmented scratchpad copy) for `plan.md`.
+Launch every lens in the background at once, then monitor each Bash task and
+**wait for all of them** before merging; do NOT start the smoke test until every
+lens has returned. (`--wait` only if you're running a single lens on a tiny diff.)
+Each reviewer's verdict is **approve** or **findings** (defects with `file:line`).
 
-Run it with `run_in_background: true` — codex runs may take up to 30 minutes,
-longer than the foreground Bash timeout allows. Wait for completion before
-proceeding; do not start review while codex is still running. Full invocation
-details, monitoring, and failure handling are in `references/codex-exec.md`.
+**Fallback.** Requires the Codex plugin installed/set up (`/plugin marketplace
+add openai/codex-plugin-cc` → `/plugin install codex@openai-codex` →
+`/codex:setup`). If the companion isn't found or Codex isn't set up, dispatch the
+lens team as **parallel Fable subagents** (one per lens, same per-lens steer,
+emit `approve` | `findings`). Prefer Codex — independent non-Claude reviewers are
+the point.
 
-### 4. Review
+**Merge = any lens blocks (union).** Collect every lens's verdict:
+- Dedupe findings across lenses by `file:line` + mechanism (different lenses
+  often flag the same defect — keep one, note which lenses raised it).
+- The stage **passes only when every lens returns `approve`** (zero findings
+  across the whole team). If **any** lens returns findings, the stage fails.
 
-Review the resulting diff (`git diff` / `git status` — codex does not commit)
-with **Codex's adversarial review** from the
-[openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) plugin —
-a steerable challenge review that tries to break the change, not rubber-stamp it:
-
-```
-/codex:adversarial-review
-```
-
-Steer it at THIS task: in the invocation, point it at the uncommitted diff and
-give it the **plan content + task statement** as the contract to judge against,
-and require its verdict to be one of **approve** or **findings** (a concrete
-list of defects with `file:line`). `/codex:adversarial-review` is read-only and
-runs as a background Codex job — use `/codex:status` to wait for it and
-`/codex:result` to collect the verdict (`/codex:cancel` to abort a hung run);
-do NOT start the smoke test until the review has returned.
-
-**Prerequisite / fallback.** This requires the Codex plugin (install once:
-`/plugin marketplace add openai/codex-plugin-cc` → `/plugin install
-codex@openai-codex` → `/codex:setup`). If the plugin's commands are unavailable
-in this environment, fall back to dispatching a **Fable subagent** (Agent tool,
-`model: "fable"`, or the Opus 4.8 1M @ `xhigh` fallback — see **Model Selection
-& Fallback**) with the same steer: review the diff against the plan + task, emit
-`approve` | `findings`. Prefer the Codex adversarial review whenever available —
-an independent (non-Claude) reviewer is the point.
-
-On findings: feed them back through another codex exec run (pipe a fix
-instruction file containing the findings and the original plan), then
-re-review with `/codex:adversarial-review` again. Loop until the review approves.
+**On any findings — rework to step 3.** Don't advance with open findings. Feed
+the **combined, deduped** findings from all lenses to a single codex fix round (a
+fix-instruction file with the findings + original plan — see
+`references/codex-exec.md`), then re-run the **whole lens team** (step 4). Loop
+3↔4 under the `/goal` until *every* lens returns `approve`. Only then go to
+step 5.
 
 ### 5. Evidence Smoke Test
 
-Dispatch an Opus subagent (Agent tool, `model: "opus"`) to verify the feature
-actually works end-to-end **and to PROVE it with evidence, not assert it.**
-The subagent must exercise whatever this stack provides — pick the one(s) that
-actually hit the changed code path:
+Dispatch an Opus subagent (`model: "opus"`) to PROVE the change works end-to-end
+— exercise whatever hits the changed code path:
 
-- **Tests** — run the project's unit / UI / integration suite (e.g.
-  `xcodebuild test`, `./gradlew test` or `connectedAndroidTest`, `pytest`,
-  `cargo test`, `go test`, `pnpm test`).
-- **App run** — launch the app on a device or simulator (iOS Simulator,
-  Android emulator, Electron shell, desktop binary) and drive the new flow.
-  The `agent-device` skill can help automate this for iOS/Android — capture a
-  screenshot/recording as evidence.
-- **Endpoints** — start the dev server or service and hit the new routes
-  (`curl`, HTTP client, RPC call) — capture request + full response.
-- **CLI** — invoke the CLI directly with real arguments — capture command +
-  stdout/stderr + exit code.
+- **Tests** — the project's suite (`xcodebuild test`, `./gradlew test` /
+  `connectedAndroidTest`, `pytest`, `cargo test`, `go test`, `pnpm test`).
+- **App run** — launch on a device/simulator and drive the new flow
+  (`agent-device` can automate iOS/Android; capture a screenshot/recording).
+- **Endpoints** — start the service and hit the new routes; capture request +
+  full response.
+- **CLI** — invoke with real args; capture command + stdout/stderr + exit code.
 
-**Evidence is mandatory (this is the enhancement over a plain smoke test).**
-For EVERY scenario the subagent must record: the exact command/request it ran,
-the **raw observed output** (exit code, response body, the decisive log lines,
-or a screenshot/recording saved to the scratchpad **with its path**), and
-PASS/FAIL. A bare "looks fine" / a PASS with no shown evidence is **rejected** —
-treat it as a failed smoke test and re-dispatch. This mirrors
-`superpowers:verification-before-completion`: evidence before assertions, always.
+**Evidence is mandatory.** For every scenario, record the exact command/request,
+the **raw output** (exit code, response body, decisive log lines, or a
+screenshot/recording saved with its path), and PASS/FAIL. A bare "looks fine" or
+a PASS with no shown evidence is **rejected** — treat it as a failed test and
+re-dispatch. (Mirrors `superpowers:verification-before-completion`.)
 
-**On FAIL, root-cause before reporting — do NOT guess.** The subagent MUST run
-`superpowers:systematic-debugging` (Phase 1 — Root Cause Investigation):
-1. Read the error/output completely (line numbers, codes, stack traces).
-2. Reproduce it consistently; note the exact steps.
-3. In a multi-component path (CI → build → sign, API → service → DB), gather
-   evidence at EACH boundary — log what enters/exits each layer — to show
-   *where* it breaks, then investigate that component.
-4. Trace the bad value back to its source; report the failing boundary and the
-   **proving evidence**, not a symptom or a hypothesis stated as fact.
+**On FAIL, root-cause before reporting — don't guess.** Run
+`superpowers:systematic-debugging` Phase 1: read the error fully (line numbers,
+codes, stack traces); reproduce it consistently; in a multi-component path
+(CI→build→sign, API→service→DB) gather evidence at each boundary to show *where*
+it breaks; trace the bad value to its source. Report the failing boundary with
+proving evidence, not a symptom or an unproven hypothesis.
 
-The smoke test is **observe-only** — the subagent must NOT fix anything. Its
-evidenced root-cause findings feed back exactly like review findings: to a
-codex fix round (step 4's loop), then re-review and re-smoke-test.
+The smoke test is **observe-only** — never fix anything. Evidenced findings feed
+back like review findings: to a codex fix round (step 4's loop), then re-review
+and re-smoke.
 
 ### 6. Ship
 
-Only after review approval and a passing **evidenced** smoke test: commit with
-a conventional message describing the task, and push. Stage files explicitly —
-never commit orchestration artifacts (`plan.md`, fix-instruction files); delete
-the generated `plan.md` from the repo root after the task ships. In execute
-mode the plan file belongs to the user: leave it in place and simply exclude
-it from the commit. Then start the next task from step 1 (or step 3 in
-execute mode). The run ends only when the `/goal` match criteria hold for
-**every** task (all review-clean, all smoke-proven, all shipped) — at which
-point the Stop-hook auto-clears; until then the session keeps working the loop.
+Only after review approval and a passing evidenced smoke test: commit with a
+conventional message describing the task. **Commit only — do NOT push** (the user
+decides when to push). Stage files explicitly; never commit orchestration
+artifacts (`plan_*.md`, fix-instruction files), and delete the generated
+`plan_<timestamp>.md` after ship. In execute mode the plan file is the user's —
+leave it in place, just exclude it from the commit. Then start the next task
+(step 1, or step 3 in execute mode). The run ends only when the `/goal` criteria
+hold for **every** task (all review-clean, all smoke-proven, all committed
+locally); the Stop-hook then auto-clears.
 
 ## Task Tracking
 
-With multiple tasks, keep a visible checklist (todo list) of all tasks and the
-current pipeline stage of the active task. Process tasks strictly
-sequentially — one task's implementation is context for the next task's
-planner prompt.
+With multiple tasks, keep a todo checklist of all tasks and the active task's
+current stage. Process strictly sequentially — one task's implementation is
+context for the next task's planner prompt.
 
 ## Discipline Gates — Don't Rationalize Around Them
 
 This loop only works if every gate holds under pressure. **Violating the letter
-of a gate is violating the spirit of it.** Common rationalizations and why they
-are wrong:
+of a gate is violating the spirit of it.**
 
 | Excuse | Reality |
 |--------|---------|
 | "The plan is obvious, I'll skip the approval gate" | In the full loop, every task's plan needs explicit user approval before Implement — no exceptions. (Execute mode is the *only* skip: the user-supplied file already stands in for an approved plan.) |
 | "The smoke test clearly passes, evidence is overkill" | A PASS with no shown evidence is rejected and re-dispatched. Evidence before assertions, always. |
 | "This finding is tiny, I'll just hand-patch it in the orchestrator" | Fixes go through a codex fix round. Reserve direct edits for trivial one-liners (typo, import) only — never large gaps. |
-| "The diff looks right, I'll review it myself and skip Codex" | The reviewer is an *independent, non-Claude* adversary. The orchestrator never self-reviews its delegated work. Use the Fable fallback only if the Codex plugin is truly unavailable. |
+| "The diff looks right, I'll review it myself and skip Codex" | The reviewers are *independent, non-Claude* adversaries. The orchestrator never self-reviews its delegated work. Use the Fable fallback only if Codex is truly unavailable. |
+| "One reviewer is enough, I'll skip the other lenses" | Review is a lens *team* — different lenses catch different failure modes. Run the full set for a substantial diff; only shrink to correctness+approach for a genuinely tiny one. |
+| "Only the approach lens flagged it, the others approved — ship it" | Any lens with a real finding blocks. The pass bar is *every* lens approves, not a majority. |
+| "This abstraction/flag might be useful later, I'll add it now" | Speculative code violates **Simplicity First** (YAGNI). Build the minimum the task needs; mention the future idea, don't build it. |
 | "The smoke test failed but the cause is obvious" | The tester must root-cause via `superpowers:systematic-debugging` with proving evidence — a hypothesis stated as fact is not a root cause. |
 | "I'll fix the failure right here in the smoke-test step" | Smoke test is observe-only. Findings feed back to a codex fix round; the tester never edits. |
-| "I'll commit plan.md / the fix file too, it's harmless" | Never commit orchestration artifacts. Stage feature files explicitly; delete generated `plan.md` after ship. |
+| "I'll commit plan_<timestamp>.md / the fix file too, it's harmless" | Never commit orchestration artifacts. Stage feature files explicitly; delete generated `plan_*.md` after ship. |
 | "Everything's basically done, I can stop now" | Not done until the match criteria hold for **every** task. The `/goal` (or its todo fallback) is what proves it. |
 
 ### Red Flags — STOP if you catch yourself thinking any of these
@@ -285,7 +303,7 @@ are wrong:
   background monitoring, and failure/retry handling
 - **`references/subagent-prompts.md`** — full-context prompt templates for the
   planner, reviewer, and evidence-smoke-test subagents
-- **`superpowers:systematic-debugging`** — the root-cause method the
-  smoke-test subagent runs on any failure (Phase 1 evidence-gathering)
+- **`superpowers:systematic-debugging`** — root-cause method the smoke-test
+  subagent runs on any failure (Phase 1 evidence-gathering)
 - **`superpowers:verification-before-completion`** — evidence-before-assertions
   discipline the smoke test enforces

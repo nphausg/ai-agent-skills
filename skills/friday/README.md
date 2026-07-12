@@ -5,13 +5,20 @@ A per-task orchestration loop that drives a batch of coding tasks to completion
 
 ```
 brainstorm → plan (Fable) → approve → implement (Codex gpt-5.5)
-  → review (Codex adversarial-review) → evidence smoke-test (Opus) → ship
+  → review (parallel Codex lens team) → evidence smoke-test (Opus) → ship
 ```
 
 The driving session **only coordinates** — it gates on approval, dispatches
 subagents, and does the git work. It never writes feature code itself; planning,
 implementation, review, and testing are all delegated to independent agents.
 Stack-agnostic: web, native mobile (iOS/Android), backend, CLIs, and libraries.
+
+Four **Coding Principles** run through it: *Think Before
+Coding* and *Goal-Driven Execution* are enforced structurally (brainstorm +
+approval; `/goal` + evidence test), while *Simplicity First* and *Surgical
+Changes* are baked into the plan and the Codex contract (since Codex is stateless
+and can't see the skill) and policed by the review team's approach/simplicity/
+surgical lens.
 
 ## When to use
 
@@ -34,28 +41,37 @@ read-only investigation.
 
 0. **Brainstorm** — `superpowers:brainstorming` with the user to pin down intent,
    requirements, constraints, and design *(skipped in execute mode)*.
-1. **Plan** — a **Fable** subagent explores the repo and writes a self-contained
-   `plan.md` *(skipped in execute mode)*.
+1. **Plan** — a **Fable** subagent explores the repo and writes a self-contained,
+   timestamped `plan_<timestamp>.md` *(skipped in execute mode)*.
 2. **Approve** — the plan is shown to the user; nothing proceeds without explicit
    approval *(skipped in execute mode)*.
-3. **Implement** — `codex --yolo exec -c model=gpt-5.5 -c model_reasoning_effort=xhigh < plan.md`,
+3. **Implement** — `codex --yolo exec -c model=gpt-5.5 -c model_reasoning_effort=xhigh < plan_<timestamp>.md`,
    run in the background (up to 30 min). Codex edits files but does not commit.
-4. **Review** — `/codex:adversarial-review` (an independent, non-Claude adversary
-   that tries to break the change) judges the diff against the plan; verdict is
-   **approve** or **findings** (`file:line`). Findings loop back through a codex
-   fix round until the review approves.
+   The loop keeps the user informed as it runs — a launch status line, periodic
+   log tails, and a final change summary (`git diff --stat`) — so you can see
+   what Implement is doing rather than staring at silence.
+4. **Review** — a **parallel team** of Codex adversarial reviewers, one per lens
+   (correctness / security / performance / approach+simplicity+surgical), each an independent
+   non-Claude adversary judging the diff against the plan. Invoked by calling the
+   companion script directly (`node codex-companion.mjs adversarial-review …`),
+   because the `/codex:adversarial-review` slash command is
+   `disable-model-invocation` and can't be triggered via the Skill tool; parallel
+   Fable subagents are the fallback. **Any lens with findings blocks** (union;
+   pass = every lens approves). On findings, **rework back to step 3** (feed the
+   combined findings to a codex fix round), then re-review the whole team — the
+   3↔4 loop runs under the `/goal` until every lens returns zero comments.
 5. **Evidence smoke test** — an **Opus** subagent proves the change works
    end-to-end (tests / app run / endpoints / CLI) with captured evidence. A PASS
    without shown evidence is rejected. Failures are root-caused via
    `superpowers:systematic-debugging` and fed back to a codex fix round —
    observe-only, the tester never edits.
-6. **Ship** — commit (staging feature files explicitly, never orchestration
-   artifacts) and push, then move to the next task.
+6. **Ship** — commit only (staging feature files explicitly, never orchestration
+   artifacts); **do not push** — pushing is left to the user. Then move to the next task.
 
 ## Goal-driven completion
 
 The first action of every run arms a **`/goal`** whose condition is the run's
-match criteria (every task: review-clean, smoke-proven, committed + pushed). This
+match criteria (every task: review-clean, smoke-proven, committed locally — no push). This
 installs a session Stop-hook so the loop **self-continues** through
 fix → re-review → re-smoke instead of stopping early, and auto-clears once every
 task meets the bar. If `/goal` is unavailable, it falls back to a `TodoWrite`-driven
@@ -65,9 +81,9 @@ manual loop with the identical bar.
 
 - **Planner (step 1):** Fable → fallback **Opus 4.8 (1M)** at `xhigh` if Fable
   is unavailable.
-- **Reviewer (step 4):** Codex `/codex:adversarial-review` → fallback Fable
-  subagent (same steer) only if the Codex plugin is unavailable. An independent
-  non-Claude reviewer is the whole point.
+- **Reviewers (step 4):** a parallel team of Codex adversarial-review runs, one
+  per lens → fallback parallel Fable subagents only if the Codex plugin is
+  unavailable. Independent non-Claude reviewers are the whole point.
 - **Implementer (step 3):** Codex `gpt-5.5` at `xhigh` — pinned, never downgraded.
 - **Smoke tester (step 5):** always Opus.
 
