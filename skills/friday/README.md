@@ -4,8 +4,8 @@ A per-task orchestration loop that drives a batch of coding tasks to completion
 **one at a time**, each through a fixed pipeline:
 
 ```
-brainstorm → plan (Fable) → approve → implement (Codex gpt-5.5)
-  → review (parallel Codex lens team) → evidence smoke-test (Opus) → ship
+brainstorm -> plan (Fable) -> approve -> implement (Codex gpt-5.5)
+  -> review (parallel Codex lens team) -> evidence smoke-test (Opus) -> ship
 ```
 
 The driving session **only coordinates** — it gates on approval, dispatches
@@ -15,7 +15,7 @@ Stack-agnostic: web, native mobile (iOS/Android), backend, CLIs, and libraries.
 
 Four **Coding Principles** run through it: *Think Before
 Coding* and *Goal-Driven Execution* are enforced structurally (brainstorm +
-approval; `/goal` + evidence test), while *Simplicity First* and *Surgical
+approval; completion checklist + evidence test), while *Simplicity First* and *Surgical
 Changes* are baked into the plan and the Codex contract (since Codex is stateless
 and can't see the skill) and policed by the review team's approach/simplicity/
 surgical lens.
@@ -35,7 +35,7 @@ read-only investigation.
 | Mode | Trigger | Behavior |
 |------|---------|----------|
 | **Full loop** (default) | "friday", "run the friday loop", "friday these tasks" | Every task runs the whole pipeline, including brainstorm + planning + the approval gate. |
-| **Execute mode** | "friday this plan", "friday `<file>.md`", "run friday on `<file>.md`" | The user supplies a pre-existing plan file. Brainstorm/plan/approve are skipped — the file *is* the approved plan and goes straight to implement → review → smoke-test → ship. The user's file is never edited; if it's not self-contained for a stateless codex run, a context-augmented copy is piped from the scratchpad. |
+| **Execute mode** | "friday this plan", "friday `<file>.md`", "run friday on `<file>.md`" | The user supplies a pre-existing plan file. Brainstorm/plan/approve are skipped — the file *is* the approved plan and goes straight to implement -> review -> smoke-test -> ship. The user's file is never edited; if it's not self-contained for a stateless codex run, a context-augmented copy is piped from the scratchpad. |
 
 ## The pipeline (per task)
 
@@ -59,7 +59,7 @@ read-only investigation.
    Fable subagents are the fallback. **Any lens with findings blocks** (union;
    pass = every lens approves). On findings, **rework back to step 3** (feed the
    combined findings to a codex fix round), then re-review the whole team — the
-   3↔4 loop runs under the `/goal` until every lens returns zero comments.
+   3↔4 loop runs until every lens returns zero comments.
 5. **Evidence smoke test** — an **Opus** subagent proves the change works
    end-to-end (tests / app run / endpoints / CLI) with captured evidence. A PASS
    without shown evidence is rejected. Failures are root-caused via
@@ -68,21 +68,20 @@ read-only investigation.
 6. **Ship** — commit only (staging feature files explicitly, never orchestration
    artifacts); **do not push** — pushing is left to the user. Then move to the next task.
 
-## Goal-driven completion
+## Completion tracking
 
-The first action of every run arms a **`/goal`** whose condition is the run's
-match criteria (every task: review-clean, smoke-proven, committed locally — no push). This
-installs a session Stop-hook so the loop **self-continues** through
-fix → re-review → re-smoke instead of stopping early, and auto-clears once every
-task meets the bar. If `/goal` is unavailable, it falls back to a `TodoWrite`-driven
-manual loop with the identical bar.
+The first action of every run creates a **`TodoWrite`** checklist whose items are
+the run's match criteria (every task: review-clean, smoke-proven, committed
+locally — no push). The loop **self-continues** through fix -> re-review ->
+re-smoke instead of stopping early: no item is closed until it holds, and the run
+ends only once every task meets the bar.
 
 ## Model selection & fallback
 
-- **Planner (step 1):** Fable → fallback **Opus 4.8 (1M)** at `xhigh` if Fable
+- **Planner (step 1):** Fable -> fallback **Opus 4.8 (1M)** at `xhigh` if Fable
   is unavailable.
 - **Reviewers (step 4):** a parallel team of Codex adversarial-review runs, one
-  per lens → fallback parallel Fable subagents only if the Codex plugin is
+  per lens -> fallback parallel Fable subagents only if the Codex plugin is
   unavailable. Independent non-Claude reviewers are the whole point.
 - **Implementer (step 3):** Codex `gpt-5.5` at `xhigh` — pinned, never downgraded.
 - **Smoke tester (step 5):** always Opus.
@@ -91,7 +90,7 @@ manual loop with the identical bar.
 
 - **Codex plugin** (openai/codex-plugin-cc) for implementation and adversarial
   review — install once:
-  `/plugin marketplace add openai/codex-plugin-cc` → `/plugin install codex@openai-codex` → `/codex:setup`.
+  `/plugin marketplace add openai/codex-plugin-cc` -> `/plugin install codex@openai-codex` -> `/codex:setup`.
 - **superpowers** skills: `brainstorming`, `systematic-debugging`,
   `verification-before-completion`.
 
@@ -105,7 +104,7 @@ carries a rationalization table + red-flags list that spell these out.
 
 ## Files
 
-- `SKILL.md` — the full loop, step details, modes, goal-driven completion, model
+- `SKILL.md` — the full loop, step details, modes, completion tracking, model
   selection, and discipline gates.
 - `references/codex-exec.md` — codex exec invocation, config pins, background
   monitoring, and failure/retry handling.

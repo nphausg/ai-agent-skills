@@ -142,7 +142,7 @@ If any scenario FAILs, run `superpowers:systematic-debugging` Phase 1 before
 reporting:
 - Read the error/output completely (line numbers, codes, stack traces).
 - Reproduce it consistently; record the exact steps.
-- In a multi-component path (CI→build→sign, API→service→DB, UI→VM→data), gather
+- In a multi-component path (CI->build->sign, API->service->DB, UI->VM->data), gather
   evidence at EACH boundary (log what enters/exits each layer) to show WHERE it
   breaks, then investigate that component.
 - Trace the bad value back to its source.
